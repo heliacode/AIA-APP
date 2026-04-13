@@ -74,7 +74,7 @@ class InventoryService {
         });
 
         // Call OpenAI Vision API
-        const items = await openaiService.analyzeImage(image.imageData, image.imageType);
+        const { items } = await openaiService.analyzeImage(image.imageData, image.imageType);
         
         console.log(`[Inventory ${inventoryId}] Image ${i + 1} analysis complete: ${items.length} item(s) found`);
 

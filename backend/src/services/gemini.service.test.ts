@@ -66,7 +66,7 @@ describe('geminiService.analyzeImage', () => {
     vi.stubGlobal('fetch', mockFetchResponse(geminiApiBody(payload)));
 
     const buf = Buffer.from('fake-image');
-    const items = await geminiService.analyzeImage(buf, 'image/jpeg', 'gemini-2.5-flash');
+    const { items } = await geminiService.analyzeImage(buf, 'image/jpeg', 'gemini-2.5-flash');
 
     expect(items).toHaveLength(1);
     expect(items[0].name).toBe('Canape en cuir');
@@ -100,7 +100,7 @@ describe('geminiService.analyzeImage', () => {
     vi.stubGlobal('fetch', mockFetchResponse(geminiApiBody(payload)));
 
     const buf = Buffer.from('fake-image');
-    const items = await geminiService.analyzeImage(buf, 'image/jpeg');
+    const { items } = await geminiService.analyzeImage(buf, 'image/jpeg');
 
     expect(items).toHaveLength(1);
     expect(items[0].name).toBe('Table basse');
@@ -120,7 +120,7 @@ describe('geminiService.analyzeImage', () => {
     vi.stubGlobal('fetch', mockFetchResponse(geminiApiBody(payload)));
 
     const buf = Buffer.from('fake-image');
-    const items = await geminiService.analyzeImage(buf, 'image/jpeg');
+    const { items } = await geminiService.analyzeImage(buf, 'image/jpeg');
 
     expect(items).toHaveLength(1);
     expect(items[0].boundingBox).toBeUndefined();
@@ -130,7 +130,7 @@ describe('geminiService.analyzeImage', () => {
     vi.stubGlobal('fetch', mockFetchResponse(geminiApiBody('')));
 
     const buf = Buffer.from('fake-image');
-    const items = await geminiService.analyzeImage(buf, 'image/jpeg');
+    const { items } = await geminiService.analyzeImage(buf, 'image/jpeg');
 
     expect(items).toEqual([]);
   });
@@ -150,7 +150,7 @@ describe('geminiService.analyzeImage', () => {
     vi.stubGlobal('fetch', mockFetchResponse(geminiApiBody(payload)));
 
     const buf = Buffer.from('fake-image');
-    const items = await geminiService.analyzeImage(buf, 'image/jpeg');
+    const { items } = await geminiService.analyzeImage(buf, 'image/jpeg');
 
     expect(items[0].category).toBe('other');
   });

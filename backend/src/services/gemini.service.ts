@@ -1,4 +1,14 @@
-import { VisionItem, BoundingBox, ItemCategory } from '../types';
+import { VisionItem, BoundingBox, ItemCategory, ItemCondition, VisionAnalysisResult } from '../types';
+import {
+  VISION_PROMPT,
+  VISION_CATEGORIES,
+  VISION_CONDITIONS,
+  geminiVisionSchema,
+  clampUnit,
+  isPersonItem,
+} from './vision-schema';
+import { preprocessForVision } from '../utils/image-preprocess';
+import { retryAsync } from '../utils/retry';
 
 /** Gemini models users can select (id = API model name) */
 export const GEMINI_MODELS = [
@@ -17,166 +27,149 @@ function resolveModel(userModel?: string | null): GeminiModelId {
   return DEFAULT_GEMINI_MODEL;
 }
 
-function convertBox2d(box: [number, number, number, number]): BoundingBox {
+function convertBox2d(box: number[]): BoundingBox | undefined {
+  if (!Array.isArray(box) || box.length !== 4) return undefined;
   const [ymin, xmin, ymax, xmax] = box;
   return {
-    x: Math.max(0, Math.min(1, xmin / 1000)),
-    y: Math.max(0, Math.min(1, ymin / 1000)),
-    width: Math.max(0, Math.min(1, (xmax - xmin) / 1000)),
-    height: Math.max(0, Math.min(1, (ymax - ymin) / 1000)),
+    x: clampUnit(xmin / 1000),
+    y: clampUnit(ymin / 1000),
+    width: clampUnit((xmax - xmin) / 1000),
+    height: clampUnit((ymax - ymin) / 1000),
   };
 }
 
-const validCategories: ItemCategory[] = [
-  'furniture', 'electronics', 'clothing', 'appliances', 'decor',
-  'jewelry', 'art', 'collectibles', 'sports_equipment', 'other',
-];
+const CATEGORY_SET = new Set<string>(VISION_CATEGORIES);
+const CONDITION_SET = new Set<string>(VISION_CONDITIONS);
 
-const personKeywords = /\b(personne|person|people|humain|human|child|children|kid|kids|baby|bébé|adult|adulte|homme|woman|femme|enfant|man|woman|visage|face)\b/i;
-
-const PROMPT = `Vous analysez une photo pour un inventaire d'assurance habitation. Listez UNIQUEMENT les OBJETS et BIENS susceptibles d'être assurés (meubles, électronique, électroménager, bijoux, oeuvres d'art, objets de valeur, etc.).
-
-RÈGLES ABSOLUES — À RESPECTER STRICTEMENT:
-- NE LISTEZ JAMAIS de personnes: ni adultes, ni enfants, ni bébés, ni silhouettes humaines. Les personnes ne sont PAS des objets et ne doivent jamais apparaître dans la liste.
-- NE LISTEZ PAS les animaux (chiens, chats, etc.) comme objets d'inventaire.
-- IGNOREZ les objets sans valeur significative pour l'assurance: gobelets jetables, crayons, papiers, déchets, nourriture périssable, produits de consommation courante sans valeur, etc.
-- Concentrez-vous sur les biens que les assureurs prennent typiquement en compte: meubles, électronique, électroménager, bijoux, art, collections, équipement sportif, vêtements de valeur, décoration, etc.
-
-Toutes vos réponses doivent être en FRANÇAIS.
-
-Pour CHAQUE OBJET (jamais de personne) identifié, fournissez:
-- name: Nom clair et spécifique en français (ex: "Téléviseur LED Samsung 55 pouces")
-- category: UN SEUL parmi (en anglais): furniture, electronics, clothing, appliances, decor, jewelry, art, collectibles, sports_equipment, other
-- brand: Marque si visible (null sinon)
-- model: Modèle si visible (null sinon)
-- condition: Un parmi: new, excellent, good, fair, poor
-- estimatedAge: Âge approximatif en années (0 si neuf)
-- description: Description en français (matériau, couleur, dimensions estimées, caractéristiques utiles pour une réclamation)
-- box_2d: Bounding box normalisé [ymin, xmin, ymax, xmax] avec des valeurs entre 0 et 1000
-
-Retournez UNIQUEMENT du JSON valide dans ce format exact:
-{
-  "items": [
-    {
-      "name": "Nom de l'objet en français",
-      "category": "furniture|electronics|clothing|appliances|decor|jewelry|art|collectibles|sports_equipment|other",
-      "brand": "Marque ou null",
-      "model": "Modèle ou null",
-      "condition": "new|excellent|good|fair|poor",
-      "estimatedAge": 0,
-      "description": "Description détaillée en français",
-      "box_2d": [ymin, xmin, ymax, xmax]
-    }
-  ]
-}`;
+type RawItem = {
+  name: string;
+  category: string;
+  brand?: string | null;
+  model?: string | null;
+  condition: string;
+  estimatedAge: number;
+  description: string;
+  confidence: number;
+  box_2d?: number[] | null;
+};
 
 interface GeminiApiResponse {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<{ text?: string }>;
-    };
-  }>;
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
   error?: { message: string; code: number };
 }
 
 class GeminiService {
-  async analyzeImage(imageBuffer: Buffer, imageType: string = 'image/jpeg', model?: string | null): Promise<VisionItem[]> {
+  async analyzeImage(
+    imageBuffer: Buffer,
+    imageType: string = 'image/jpeg',
+    model?: string | null
+  ): Promise<VisionAnalysisResult> {
     if (!process.env.GEMINI_API_KEY) {
       throw new Error('Gemini API key not configured');
     }
 
     const modelId = resolveModel(model);
 
-    let mimeType = imageType || 'image/jpeg';
-    if (!mimeType.startsWith('image/')) {
-      mimeType = 'image/jpeg';
-    }
-
-    const base64Image = imageBuffer.toString('base64');
-    if (!base64Image || base64Image.length === 0) {
+    if (!imageBuffer || imageBuffer.length === 0) {
       throw new Error('Invalid image buffer: empty or corrupted');
     }
+    const processed = await preprocessForVision(imageBuffer, imageType);
+    const base64Image = processed.buffer.toString('base64');
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
+    const startedAt = Date.now();
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: PROMPT },
-                { inlineData: { mimeType, data: base64Image } },
+      const json = await retryAsync<GeminiApiResponse>(
+        async () => {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: 'user',
+                  parts: [
+                    { text: VISION_PROMPT },
+                    { inlineData: { mimeType: processed.mimeType, data: base64Image } },
+                  ],
+                },
               ],
-            },
-          ],
-          generationConfig: { responseMimeType: 'application/json' },
-        }),
-      });
+              generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: geminiVisionSchema,
+              },
+            }),
+          });
+          if (!res.ok) {
+            const errorBody = await res.text();
+            const err = new Error(`Gemini API HTTP ${res.status}: ${errorBody}`) as Error & {
+              status: number;
+            };
+            err.status = res.status;
+            throw err;
+          }
+          return (await res.json()) as GeminiApiResponse;
+        },
+        {
+          onRetry: (err, attempt) =>
+            console.warn(`[Gemini] retry ${attempt}: ${(err as Error).message}`),
+        }
+      );
+      if (json.error) throw new Error(`Gemini API error: ${json.error.message}`);
 
-      if (!res.ok) {
-        const errorBody = await res.text();
-        throw new Error(`Gemini API HTTP ${res.status}: ${errorBody}`);
-      }
-
-      const json = (await res.json()) as GeminiApiResponse;
-
-      if (json.error) {
-        throw new Error(`Gemini API error: ${json.error.message}`);
-      }
+      const usage = {
+        modelId,
+        inputTokens: json.usageMetadata?.promptTokenCount,
+        outputTokens: json.usageMetadata?.candidatesTokenCount,
+        totalTokens: json.usageMetadata?.totalTokenCount,
+        latencyMs: Date.now() - startedAt,
+      };
 
       const content = json.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!content) {
         console.warn('Gemini returned empty content');
-        return [];
+        return { items: [], usage };
       }
 
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-      } catch {
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          parsed = JSON.parse(jsonMatch[0]);
-        } else {
-          console.error('Failed to parse Gemini response:', content);
-          return [];
-        }
-      }
-
-      const rawItems = parsed.items || [];
-      const items = rawItems.filter((item: Record<string, unknown>) => {
-        const name = (item.name || '').toString();
-        const desc = (item.description || '').toString();
-        if (personKeywords.test(name) || personKeywords.test(desc)) {
-          console.warn(`Gemini: excluding person-like item from list: "${name}"`);
+      const parsed = JSON.parse(content) as { items?: RawItem[] };
+      const rawItems = parsed.items ?? [];
+      const safeItems = rawItems.filter((it) => {
+        if (isPersonItem(it.name ?? '', it.description ?? '')) {
+          console.warn(`Gemini: excluding person-like item: "${it.name}"`);
           return false;
         }
         return true;
       });
-      console.log(`Gemini identified ${items.length} items in image (${rawItems.length - items.length} excluded as person/non-object)`);
+      console.log(
+        `Gemini identified ${safeItems.length} items (model=${modelId}, ${rawItems.length - safeItems.length} filtered, img ${processed.originalBytes}→${processed.processedBytes}B)`
+      );
 
-      return items.map((item: Record<string, unknown>) => {
-        const cat = validCategories.includes(item.category as ItemCategory)
+      const items: VisionItem[] = safeItems.map((item) => {
+        const category: ItemCategory = CATEGORY_SET.has(item.category)
           ? (item.category as ItemCategory)
           : 'other';
-        const box2d = item.box_2d as [number, number, number, number] | undefined;
+        const condition: ItemCondition = CONDITION_SET.has(item.condition)
+          ? (item.condition as ItemCondition)
+          : 'good';
         return {
-          name: (item.name as string) || 'Unknown Item',
-          category: cat,
-          brand: (item.brand as string) || undefined,
-          model: (item.model as string) || undefined,
-          condition: ((item.condition as string) || 'good') as VisionItem['condition'],
-          estimatedAge: item.estimatedAge !== undefined ? (item.estimatedAge as number) : undefined,
-          description: (item.description as string) || `${(item.name as string) || 'Item'} identified in image`,
-          boundingBox: box2d && Array.isArray(box2d) && box2d.length === 4
-            ? convertBox2d(box2d)
-            : undefined,
+          name: item.name || 'Unknown Item',
+          category,
+          brand: item.brand ?? undefined,
+          model: item.model ?? undefined,
+          condition,
+          estimatedAge: item.estimatedAge,
+          description: item.description || `${item.name} identified in image`,
+          confidence: clampUnit(item.confidence),
+          boundingBox: item.box_2d ? convertBox2d(item.box_2d) : undefined,
         };
       });
+      return { items, usage };
     } catch (error: unknown) {
       const err = error as Error;
       console.error('Gemini API error:', err);

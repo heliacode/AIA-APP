@@ -55,6 +55,19 @@ export interface BoundingBox {
   height: number; // Normalized height (0-1)
 }
 
+export interface VisionUsage {
+  modelId: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  latencyMs: number;
+}
+
+export interface VisionAnalysisResult {
+  items: VisionItem[];
+  usage: VisionUsage;
+}
+
 export interface VisionItem {
   name: string;
   category: ItemCategory;
@@ -63,6 +76,7 @@ export interface VisionItem {
   condition: ItemCondition;
   estimatedAge?: number;
   description: string;
+  confidence?: number; // 0-1, model self-reported certainty
   boundingBox?: BoundingBox; // Normalized coordinates (0-1 range)
 }
 
