@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function Upload() {
   const [files, setFiles] = useState<File[]>([]);
@@ -197,6 +198,12 @@ export default function Upload() {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-6">Nouvel Inventaire</h1>
+
+      <Alert className="mb-4 border-amber-500/50 bg-amber-50 text-amber-900 dark:border-amber-500/50 dark:bg-amber-950 dark:text-amber-100">
+        <AlertDescription>
+          Ce format d'inventaire est en cours de remplacement. Pour organiser vos biens par piece ou coffre, <button type="button" className="underline font-medium" onClick={() => navigate('/')}>creez un lieu</button> depuis l'accueil.
+        </AlertDescription>
+      </Alert>
 
       <Card className="mb-4 shadow-md">
         <CardContent className="p-6">

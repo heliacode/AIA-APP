@@ -11,7 +11,6 @@ import AddItemCard from '@/components/AddItemCard';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function Home() {
   const [locations, setLocations] = useState<Location[]>([]);
@@ -19,9 +18,7 @@ export default function Home() {
   const [exporting, setExporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [error, setError] = useState('');
   const [lastAddedId, setLastAddedId] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const addedRef = useRef<HTMLDivElement>(null);
 
@@ -41,12 +38,6 @@ export default function Home() {
     }
   }, [lastAddedId, locations]);
 
-  useEffect(() => {
-    if (!successMessage) return;
-    const t = setTimeout(() => setSuccessMessage(''), 4000);
-    return () => clearTimeout(t);
-  }, [successMessage]);
-
   const loadLocations = async () => {
     try {
       setLoading(true);
@@ -61,16 +52,15 @@ export default function Home() {
 
   const addLocation = async (name: string) => {
     if (!name) return;
-    setError('');
     try {
       setAdding(true);
       const loc = await locationsApi.create({ name });
       setLastAddedId(loc.id);
-      setSuccessMessage('Lieu ajoute.');
+      toast.success('Lieu ajoute.');
       await loadLocations();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur lors de la creation';
-      setError(message);
+      toast.error(message);
     } finally {
       setAdding(false);
     }
@@ -139,17 +129,6 @@ export default function Home() {
           </Button>
         )}
       </div>
-
-      {successMessage && (
-        <Alert className="mb-4 border-green-500/50 bg-green-50 text-green-900 dark:border-green-500/50 dark:bg-green-950 dark:text-green-100">
-          <AlertDescription>{successMessage}</AlertDescription>
-        </Alert>
-      )}
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         {locations.map((location) => (

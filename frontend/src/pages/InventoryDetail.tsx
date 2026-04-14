@@ -6,7 +6,6 @@ import {
   faDollarSign,
   faSpinner,
   faFilePdf,
-  faArrowLeft,
   faEdit,
   faSave,
   faTimes,
@@ -16,6 +15,7 @@ import {
 import { inventoryApi } from '../services/api';
 import type { InventoryDetail as InventoryDetailType } from '../services/api';
 import EditableItem from '../components/EditableItem';
+import PageBreadcrumb from '@/components/PageBreadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -165,10 +165,19 @@ export default function InventoryDetail() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <Button type="button" variant="ghost" className="mb-4" onClick={() => navigate('/')}>
-        <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
-        Retour
-      </Button>
+      <PageBreadcrumb
+        items={[
+          { label: 'Accueil', to: '/' },
+          { label: 'Inventaire' },
+          { label: inventory.name || 'Sans nom' },
+        ]}
+      />
+
+      <Alert className="mb-4 border-amber-500/50 bg-amber-50 text-amber-900 dark:border-amber-500/50 dark:bg-amber-950 dark:text-amber-100">
+        <AlertDescription>
+          Ce format d'inventaire est en cours de remplacement. Pour vos nouveaux inventaires, creez un <button type="button" className="underline" onClick={() => navigate('/')}>lieu</button> et ajoutez-y vos pieces ou coffres.
+        </AlertDescription>
+      </Alert>
 
       <Card className="mb-6 shadow-lg">
         <CardContent className="p-6">

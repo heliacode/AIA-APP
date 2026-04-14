@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useDropzone } from 'react-dropzone';
 import { toast } from 'sonner';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -33,6 +33,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
+import { Progress } from '@/components/ui/progress';
+import PageBreadcrumb from '@/components/PageBreadcrumb';
 
 const conditionLabels: Record<string, string> = {
   new: 'Neuf',
@@ -51,6 +53,8 @@ export default function ContainerDetail({ containerType }: ContainerDetailProps)
   const containerApi = createContainerApi(containerType);
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoCapture = searchParams.get('autoCapture') === '1';
   const [container, setContainer] = useState<Container | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -356,20 +360,23 @@ export default function ContainerDetail({ containerType }: ContainerDetailProps)
     );
   }
 
-  const locationId = container.location?.id ?? (container as { locationId?: string }).locationId;
   const images = container.images ?? [];
+
+  const processedCount = container.analysisMetadata?.processedImages ?? 0;
+  const totalCount = container.analysisMetadata?.totalImages ?? 0;
+  const progressPct = totalCount > 0 ? Math.round((processedCount / totalCount) * 100) : 0;
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <Button
-        type="button"
-        variant="ghost"
-        className="mb-4"
-        onClick={() => navigate(locationId ? `/location/${locationId}` : '/')}
-      >
-        <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
-        Retour
-      </Button>
+      <PageBreadcrumb
+        items={[
+          { label: 'Accueil', to: '/' },
+          ...(container.location
+            ? [{ label: container.location.name, to: `/location/${container.location.id}` }]
+            : []),
+          { label: container.name },
+        ]}
+      />
 
       <Card className="mb-6 shadow-lg">
         <CardContent className="p-6">
@@ -455,9 +462,9 @@ export default function ContainerDetail({ containerType }: ContainerDetailProps)
                   <>
                     <Spinner className="mr-2 size-4" data-icon="inline-start" />
                     Analyse en cours…
-                    {container.analysisMetadata?.totalImages != null && (
+                    {totalCount > 0 && (
                       <span className="ml-2 opacity-80">
-                        ({container.analysisMetadata.processedImages ?? 0}/{container.analysisMetadata.totalImages} photo(s))
+                        ({processedCount}/{totalCount})
                       </span>
                     )}
                   </>
@@ -472,6 +479,48 @@ export default function ContainerDetail({ containerType }: ContainerDetailProps)
           )}
         </CardContent>
       </Card>
+
+      {autoCapture && (
+        <Card className="mb-4 border-primary/40 shadow-md ring-2 ring-primary/30">
+          <CardContent className="flex items-center justify-between gap-4 p-4">
+            <div>
+              <p className="font-medium">Pret a prendre une photo ?</p>
+              <p className="text-sm text-muted-foreground">
+                Touchez le bouton pour ouvrir l'appareil photo.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant={config.buttonVariant}
+              autoFocus
+              onClick={() => {
+                (cameraInputRef.current ?? galleryInputRef.current)?.click();
+                setSearchParams({}, { replace: true });
+              }}
+            >
+              <FontAwesomeIcon icon={faCamera} className="mr-2" />
+              Prendre une photo
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {container.analysisStatus === 'processing' && (
+        <Card className="mb-4 shadow-sm">
+          <CardContent className="flex items-center gap-4 p-4">
+            <Spinner className="size-5" />
+            <div className="flex-1">
+              <div className="mb-1 flex items-center justify-between text-sm">
+                <span className="font-medium">Analyse en cours</span>
+                <span className="text-muted-foreground">
+                  {totalCount > 0 ? `${processedCount} / ${totalCount} photo${totalCount > 1 ? 's' : ''}` : 'Preparation…'}
+                </span>
+              </div>
+              <Progress value={progressPct} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {container.analysisStatus === 'error' && (
         <Alert className="mb-4 border-amber-500/50 bg-amber-50 text-amber-900 dark:border-amber-500/50 dark:bg-amber-950 dark:text-amber-100">
@@ -856,7 +905,7 @@ export default function ContainerDetail({ containerType }: ContainerDetailProps)
         open={confirmDeleteImageId !== null}
         onOpenChange={(open) => { if (!open) setConfirmDeleteImageId(null); }}
         title="Supprimer la photo"
-        description="Supprimer cette photo ?"
+        description="Supprimer cette photo ? Les objets detectes sur cette photo seront aussi supprimes."
         confirmLabel="Supprimer"
         onConfirm={executeDeleteImage}
       />

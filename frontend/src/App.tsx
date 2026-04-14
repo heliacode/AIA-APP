@@ -1,5 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Toaster, toast } from 'sonner';
 import { AuthProvider } from './contexts/AuthContext';
 import Header from './components/Header';
 import Footer from './components/Footer';
@@ -16,12 +17,22 @@ import Terms from './pages/Terms';
 import CookiePolicy from './pages/CookiePolicy';
 import Support from './pages/Support';
 import ProtectedRoute from './components/ProtectedRoute';
+import CaptureFAB from './components/CaptureFAB';
+
+function RouteToastCleanup() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    toast.dismiss();
+  }, [pathname]);
+  return null;
+}
 
 function App() {
   return (
     <AuthProvider>
       <Toaster richColors position="top-right" />
       <BrowserRouter>
+        <RouteToastCleanup />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/admin" element={<Admin />} />
@@ -47,6 +58,7 @@ function App() {
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </main>
+                  <CaptureFAB />
                   <Footer />
                 </div>
               </ProtectedRoute>

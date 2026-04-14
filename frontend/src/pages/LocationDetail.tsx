@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Spinner } from '@/components/ui/spinner';
 import ContainerCard from '@/components/ContainerCard';
 import AddItemCard from '@/components/AddItemCard';
+import PageBreadcrumb from '@/components/PageBreadcrumb';
 
 export default function LocationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -22,7 +23,6 @@ export default function LocationDetail() {
   const [loading, setLoading] = useState(true);
   const [addingRoom, setAddingRoom] = useState(false);
   const [addingSafe, setAddingSafe] = useState(false);
-  const [error, setError] = useState('');
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [editingRoomName, setEditingRoomName] = useState('');
   const [editingSafeId, setEditingSafeId] = useState<string | null>(null);
@@ -31,7 +31,6 @@ export default function LocationDetail() {
   const [savingSafe, setSavingSafe] = useState(false);
   const [lastAddedRoomId, setLastAddedRoomId] = useState<string | null>(null);
   const [lastAddedSafeId, setLastAddedSafeId] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState('');
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [showAddSafe, setShowAddSafe] = useState(false);
   const [confirmDeleteRoomId, setConfirmDeleteRoomId] = useState<string | null>(null);
@@ -61,12 +60,6 @@ export default function LocationDetail() {
     }
   }, [lastAddedRoomId, lastAddedSafeId, location?.rooms, location?.safes]);
 
-  useEffect(() => {
-    if (!successMessage) return;
-    const t = setTimeout(() => setSuccessMessage(''), 4000);
-    return () => clearTimeout(t);
-  }, [successMessage]);
-
   const loadLocation = async (silent = false) => {
     if (!id) return;
     try {
@@ -82,12 +75,11 @@ export default function LocationDetail() {
 
   const addRoom = async (name: string) => {
     if (!id || !name) return;
-    setError('');
     try {
       setAddingRoom(true);
       const room = await locationsApi.addRoom(id, name);
       setLastAddedRoomId(room.id);
-      setSuccessMessage('Piece ajoutee et enregistree.');
+      toast.success('Piece ajoutee et enregistree.');
       setLocation((prev) =>
         prev
           ? { ...prev, rooms: [...(prev.rooms ?? []), { id: room.id, name, _count: { images: 0 } }] }
@@ -96,7 +88,7 @@ export default function LocationDetail() {
       await loadLocation(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement';
-      setError(message);
+      toast.error(message);
     } finally {
       setAddingRoom(false);
     }
@@ -104,12 +96,11 @@ export default function LocationDetail() {
 
   const addSafe = async (name: string) => {
     if (!id || !name) return;
-    setError('');
     try {
       setAddingSafe(true);
       const safe = await locationsApi.addSafe(id, name);
       setLastAddedSafeId(safe.id);
-      setSuccessMessage('Coffre ajoute et enregistre.');
+      toast.success('Coffre ajoute et enregistre.');
       setLocation((prev) =>
         prev
           ? { ...prev, safes: [...(prev.safes ?? []), { id: safe.id, name, _count: { images: 0 } }] }
@@ -118,7 +109,7 @@ export default function LocationDetail() {
       await loadLocation(true);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur lors de l\'enregistrement';
-      setError(message);
+      toast.error(message);
     } finally {
       setAddingSafe(false);
     }
@@ -164,7 +155,6 @@ export default function LocationDetail() {
   };
   const handleSaveRoomName = async () => {
     if (!editingRoomId || !editingRoomName.trim()) return;
-    setError('');
     try {
       setSavingRoom(true);
       await roomsApi.update(editingRoomId, editingRoomName.trim());
@@ -172,7 +162,7 @@ export default function LocationDetail() {
       await loadLocation();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur';
-      setError(message);
+      toast.error(message);
     } finally {
       setSavingRoom(false);
     }
@@ -188,7 +178,6 @@ export default function LocationDetail() {
   };
   const handleSaveSafeName = async () => {
     if (!editingSafeId || !editingSafeName.trim()) return;
-    setError('');
     try {
       setSavingSafe(true);
       await safesApi.update(editingSafeId, editingSafeName.trim());
@@ -196,7 +185,7 @@ export default function LocationDetail() {
       await loadLocation();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Erreur';
-      setError(message);
+      toast.error(message);
     } finally {
       setSavingSafe(false);
     }
@@ -231,10 +220,12 @@ export default function LocationDetail() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <Button type="button" variant="ghost" className="mb-4" onClick={() => navigate('/')}>
-        <FontAwesomeIcon icon={faArrowLeft} className="mr-2" />
-        Retour
-      </Button>
+      <PageBreadcrumb
+        items={[
+          { label: 'Accueil', to: '/' },
+          { label: location.name },
+        ]}
+      />
 
       <Card className="mb-6 shadow-lg">
         <CardContent className="p-6">
@@ -244,17 +235,6 @@ export default function LocationDetail() {
           )}
         </CardContent>
       </Card>
-
-      {successMessage && (
-        <Alert className="mb-4 border-green-500/50 bg-green-50 text-green-900 dark:border-green-500/50 dark:bg-green-950 dark:text-green-100">
-          <AlertDescription>{successMessage}</AlertDescription>
-        </Alert>
-      )}
-      {error && (
-        <Alert variant="destructive" className="mb-4">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
 
       {/* Pieces */}
       <section className="mb-8">
